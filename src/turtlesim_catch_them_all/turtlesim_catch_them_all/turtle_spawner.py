@@ -7,7 +7,8 @@ from turtlesim.srv import Spawn
 from functools import partial
 from my_robot_interfaces.msg import Turtle
 from my_robot_interfaces.msg import TurtleArray
-
+from my_robot_interfaces.srv import CatchTurtle
+from turtlesim.srv import Kill
 
 class TurtleSpawner(Node):
     def __init__(self):
@@ -28,6 +29,38 @@ class TurtleSpawner(Node):
         
         # Spawn a new turtle every 2 seconds
         self.timer = self.create_timer(2.0, self.spawn_new_turtle)
+
+        #create a service to catch turtles
+        self.catch_turtle_srv_ = self.create_service(CatchTurtle, "catch_turtle", self.callback_catch_turtle_srv)
+
+        #create a client to /Kill service
+        self.turtle_killer_client_ = self.create_client(Kill, "/kill")
+
+
+
+    def callback_catch_turtle_srv(self, request:CatchTurtle.Request, response:CatchTurtle.Response):
+        #call the kill service to remove the turtle
+        self.call_kill_service(request.name) 
+        response.success = True
+        return response
+
+
+    def call_kill_service(self, turtle_name):
+        self.turtle_killer_client_.wait_for_service(1.0)
+        request = Kill.Request()
+        request.name = turtle_name
+        future = self.turtle_killer_client_.call_async(request)
+        future.add_done_callback(partial(self.callback_call_kill_service, turtle_name))
+    
+    def callback_call_kill_service(self, turtle_name, future):
+        try:
+            response = future.result()
+            self.get_logger().info(f"Turtle {turtle_name} killed.")
+            #remove the turtle from alive_turtles list
+            self.alive_turtles = [turtle for turtle in self.alive_turtles if turtle.name != turtle_name]
+            self.publish_alive_turtles()
+        except Exception as e:
+            self.get_logger().error(f"Kill service failed: {e}")
 
 
     def publish_alive_turtles(self):

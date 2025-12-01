@@ -6,7 +6,7 @@ from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from my_robot_interfaces.msg import Turtle
 from my_robot_interfaces.msg import TurtleArray
-
+from my_robot_interfaces.srv import CatchTurtle
 
 class TurtleController(Node):
     def __init__(self):
@@ -26,8 +26,10 @@ class TurtleController(Node):
         #subscriber to /alive_turtles to receive a list of alive turtles
         self.alive_turtles_list_sub = self.create_subscription(TurtleArray, "alive_turtles", self.callback_alive_turtles_list, 10)
 
-        self.control_loop_timer_ = self.create_timer(0.01, self.control_loop)
+        #creaate a service client to catch turtles
+        self.catch_turtle_client_ = self.create_client(CatchTurtle, "catch_turtle")
 
+        self.control_loop_timer_ = self.create_timer(0.01, self.control_loop)
 
 
     def callback_alive_turtles_list(self, msg:TurtleArray ):
@@ -39,7 +41,23 @@ class TurtleController(Node):
         else:
             self.turtle_to_catch = None
 
+    def call_catch_turtle_service(self, turtle_name):
+        self.catch_turtle_client_.wait_for_service(1.0)
+        request = CatchTurtle.Request()
+        request.name = turtle_name
+        future = self.catch_turtle_client_.call_async(request)
+        future.add_done_callback(self.callback_call_catch_turtle_service)
 
+    def callback_call_catch_turtle_service(self, future):
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info("Turtle caught successfully.")
+            else:
+                self.get_logger().info("Failed to catch the turtle.")
+        except Exception as e:
+            self.get_logger().error(f"Service call failed: {e}")
+    
 
     def callback_pose_sub(self, turtle_pose: Pose):
         self.pose_ = turtle_pose
@@ -70,6 +88,8 @@ class TurtleController(Node):
         else:
             cmd.linear.x = 0.0
             cmd.angular.z = 0.0
+            self.call_catch_turtle_service(self.turtle_to_catch.name)
+            self.turtle_to_catch = None   #reset the turtle to catch
 
         self.cmd_lev_pub_.publish(cmd)
 
